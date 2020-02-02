@@ -11,16 +11,25 @@ const INITIAL_TAIL: usize = 5;
 // A component contains data
 // which is associated with an entity.
 #[derive(Debug)]
-struct Vel(Vec2<i32>);
+struct Velocity(Vec2<i32>);
 
-impl Component for Vel {
+impl Component for Velocity {
     type Storage = VecStorage<Self>;
 }
 
-#[derive(Debug)]
-struct Pos(Vec2<i32>);
 
-impl Component for Pos {
+#[derive(Debug)]
+struct Lifetime(usize);
+
+impl Component for Lifetime {
+    type Storage = VecStorage<Self>;
+}
+
+
+#[derive(Debug)]
+struct Position(Vec2<i32>);
+
+impl Component for Position {
     type Storage = VecStorage<Self>;
 }
 
@@ -39,7 +48,7 @@ impl<'a> System<'a> for MovementSystem {
     // These are the resources required for execution.
     // You can also define a struct and `#[derive(SystemData)]`,
     // see the `full` example.
-    type SystemData = (WriteStorage<'a, Pos>, ReadStorage<'a, Vel>);
+    type SystemData = (WriteStorage<'a, Position>, ReadStorage<'a, Velocity>);
 
     fn run(&mut self, (mut pos, vel): Self::SystemData) {
         // The `.join()` combines multiple component storages,
@@ -52,20 +61,22 @@ impl<'a> System<'a> for MovementSystem {
     }
 }
 
-struct RenderSystem;
+struct LifetimeSystem;
 
-impl RenderSystem {
-    fn new() -> Self {
-        Self{}
-    }
-}
+impl<'a> System<'a> for LifetimeSystem {
+    // These are the resources required for execution.
+    // You can also define a struct and `#[derive(SystemData)]`,
+    // see the `full` example.
+    type SystemData = WriteStorage<'a, Lifetime>;
 
-impl<'a> System<'a> for RenderSystem {
-    type SystemData = ReadStorage<'a, Pos>;
-
-    fn run(&mut self, positions: Self::SystemData) {
-        for position in positions.join() {
-            println!("{},{}", (position.0).x, (position.0).y);
+    fn run(&mut self, mut lifetimes: Self::SystemData) {
+        // The `.join()` combines multiple component storages,
+        // so we get access to all entities which have
+        // both a position and a velocity.
+        for lifetime in (&mut lifetimes).join() {
+            if lifetime.0 > 0 {
+                lifetime.0 -= 1;
+            }
         }
     }
 }
@@ -82,15 +93,17 @@ impl<'a> GameState<'a> {
         // container for components
         // and other resources.
         let mut world = World::new();
-        world.register::<Pos>();
-        world.register::<Vel>();
+        world.register::<Position>();
+        world.register::<Velocity>();
+        world.register::<Lifetime>();
         world.register::<Sprite>();
 
         // An entity may or may not contain some component.
 
         world.create_entity()
-            .with(Vel(Vec2::new(1, 0)))
-            .with(Pos(Vec2::new(0, 0)))
+            .with(Velocity(Vec2::new(1, 0)))
+            .with(Position(Vec2::new(0, 0)))
+            .with(Lifetime(INITIAL_TAIL))
             .with(Sprite{rect: Rectangle::new(0.0,0.0,1.0,1.0)})
             .build();
         // world.create_entity().with(Vel(Vec2::new(0.0, 1.0))).with(Pos(Vec2::new(3.0, 2.0))).build();
@@ -98,7 +111,7 @@ impl<'a> GameState<'a> {
 
         // This entity does not have `Vel`, so it won't be dispatched.
         world.create_entity()
-            .with(Pos(Vec2::new(2, 0)))
+            .with(Position(Vec2::new(2, 0)))
             .with(Sprite{rect: Rectangle::new(0.0,1.0,1.0,1.0)})
             .build();
 
@@ -108,7 +121,8 @@ impl<'a> GameState<'a> {
         // Since we only have one, we don't depend on anything.
         // See the `full` example for dependencies.
         let mut dispatcher = DispatcherBuilder::new()
-            .with(MovementSystem, "sys_a", &[])
+            .with(MovementSystem, "movement", &[])
+            .with(LifetimeSystem, "lifetime", &[])
             //.with(RenderSystem::new(), "renderer", &[])
             .build();
         // This will call the `setup` function of every system.
@@ -127,7 +141,7 @@ impl<'a> GameState<'a> {
 }
 
 impl<'a> State for GameState<'a> {
-    fn update(&mut self, ctx: &mut Context) -> tetra::Result {
+    fn update(&mut self, _ctx: &mut Context) -> tetra::Result {
         // This dispatches all the systems in parallel (but blocking).
         self.dispatcher.dispatch(&mut self.world);
 
@@ -137,15 +151,19 @@ impl<'a> State for GameState<'a> {
     fn draw(&mut self, ctx: &mut Context) -> tetra::Result {
         graphics::clear(ctx, Color::BLACK);
 
-        let positions = self.world.read_storage::<Pos>();
+        let positions = self.world.read_storage::<Position>();
         let sprites = self.world.read_storage::<Sprite>();
+        let lifetimes = self.world.read_storage::<Lifetime>();
+        let scale = Vec2::new((SPRITE_SIZE - 1) as f32 , (SPRITE_SIZE - 1) as f32);
 
-        for (position, sprite) in (&positions, &sprites).join() {
+        for (position, sprite, lifetime) in (&positions, &sprites, &lifetimes).join() {
+            if lifetime.0 > 0 {
             let pos = Vec2::new(((position.0).x * SPRITE_SIZE) as f32, ((position.0).y * SPRITE_SIZE) as f32);
-            graphics::draw(ctx, &self.spritesheet, DrawParams::new()
-                .position(pos)
-                .clip(sprite.rect)
-                .scale(Vec2::new((SPRITE_SIZE - 1) as f32 , (SPRITE_SIZE - 1) as f32)));
+                graphics::draw(ctx, &self.spritesheet, DrawParams::new()
+                    .position(pos)
+                    .clip(sprite.rect)
+                    .scale(scale));
+            }
         }
 
         Ok(())
