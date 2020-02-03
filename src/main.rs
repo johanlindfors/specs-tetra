@@ -64,18 +64,17 @@ impl<'a> System<'a> for MovementSystem {
 struct LifetimeSystem;
 
 impl<'a> System<'a> for LifetimeSystem {
-    // These are the resources required for execution.
-    // You can also define a struct and `#[derive(SystemData)]`,
-    // see the `full` example.
-    type SystemData = WriteStorage<'a, Lifetime>;
+    type SystemData = (
+        WriteStorage<'a, Lifetime>,
+        Entities<'a>
+    );
 
-    fn run(&mut self, mut lifetimes: Self::SystemData) {
-        // The `.join()` combines multiple component storages,
-        // so we get access to all entities which have
-        // both a position and a velocity.
-        for lifetime in (&mut lifetimes).join() {
+    fn run(&mut self, (mut lifetimes, entities): Self::SystemData) {
+        for (lifetime, entity) in (&mut lifetimes, &*entities).join() {
             if lifetime.0 > 0 {
                 lifetime.0 -= 1;
+            } else {
+                entities.delete(entity);
             }
         }
     }
@@ -99,7 +98,6 @@ impl<'a> GameState<'a> {
         world.register::<Sprite>();
 
         // An entity may or may not contain some component.
-
         world.create_entity()
             .with(Velocity(Vec2::new(1, 0)))
             .with(Position(Vec2::new(0, 0)))
@@ -153,18 +151,17 @@ impl<'a> State for GameState<'a> {
 
         let positions = self.world.read_storage::<Position>();
         let sprites = self.world.read_storage::<Sprite>();
-        let lifetimes = self.world.read_storage::<Lifetime>();
+        
         let scale = Vec2::new((SPRITE_SIZE - 1) as f32 , (SPRITE_SIZE - 1) as f32);
 
-        for (position, sprite, lifetime) in (&positions, &sprites, &lifetimes).join() {
-            if lifetime.0 > 0 {
+        for (position, sprite) in (&positions, &sprites).join() {
             let pos = Vec2::new(((position.0).x * SPRITE_SIZE) as f32, ((position.0).y * SPRITE_SIZE) as f32);
                 graphics::draw(ctx, &self.spritesheet, DrawParams::new()
                     .position(pos)
                     .clip(sprite.rect)
                     .scale(scale));
-            }
         }
+
 
         Ok(())
     }
