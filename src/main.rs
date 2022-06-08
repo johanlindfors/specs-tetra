@@ -74,7 +74,7 @@ impl<'a> System<'a> for LifetimeSystem {
             if lifetime.0 > 0 {
                 lifetime.0 -= 1;
             } else {
-                entities.delete(entity);
+                entities.delete(entity).unwrap();
             }
         }
     }
@@ -151,7 +151,7 @@ impl<'a> State for GameState<'a> {
 
         let positions = self.world.read_storage::<Position>();
         let sprites = self.world.read_storage::<Sprite>();
-        
+
         let scale = Vec2::new((SPRITE_SIZE - 1) as f32 , (SPRITE_SIZE - 1) as f32);
 
         for (position, sprite) in (&positions, &sprites).join() {
